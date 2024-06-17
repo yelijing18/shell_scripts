@@ -2,12 +2,14 @@
 
 # 显示帮助信息
 show_help() {
-    echo "Usage: $0 [--local] <完整镜像名> <新镜像仓库>"
+    echo "Usage: $0 [--local] [--import-docker] [--import-containerd] <完整镜像名> <新镜像仓库>"
     echo
     echo "参数："
-    echo "  --local      选项参数，表示是否通过 docker save 和 docker load 命令在本地中转镜像文件"
-    echo "  <完整镜像名>   必选参数，表示要处理的完整镜像名"
-    echo "  <新镜像仓库>   必选参数，表示新的镜像仓库"
+    echo "  --local              选项参数，表示是否通过 docker save 和 docker load 命令在本地中转镜像文件"
+    echo "  --import-docker      选项参数，表示是否通过 docker import 命令导入镜像文件"
+    echo "  --import-containerd  选项参数，表示是否通过 containerd 相关命令导入镜像文件"
+    echo "  <完整镜像名>           必选参数，表示要处理的完整镜像名"
+    echo "  <新镜像仓库>           必选参数，表示新的镜像仓库"
     echo
     echo "示例："
     echo "  $0 k8s.gcr.io/pause:3.2 swr.cn-east-3.myhuaweicloud.com/yelijing18/"
@@ -21,19 +23,46 @@ if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
     exit 0
 fi
 
-# 默认标签
 DEFAULT_TAG="latest"
+LOCAL_FLAG=""
+IMPORT_DOCKER_FLAG=""
+IMPORT_CONTAINERD_FLAG=""
+FULL_IMAGE=""
+NEW_REPO=""
 
-# 检查第一个参数是否是标志参数
-if [[ "$1" == "--local" ]]; then
-    LOCAL_FLAG=$1
-    FULL_IMAGE=$2
-    NEW_REPO=$3
-else
-    LOCAL_FLAG=""
-    FULL_IMAGE=$1
-    NEW_REPO=$2
-fi
+# 解析参数
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --local)
+            LOCAL_FLAG="--local"
+            shift
+            ;;
+        --import-docker)
+            IMPORT_DOCKER_FLAG="--import-docker"
+            shift
+            ;;
+        --import-containerd)
+            IMPORT_CONTAINERD_FLAG="--import-containerd"
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            if [[ -z "$FULL_IMAGE" ]]; then
+                FULL_IMAGE=$1
+            elif [[ -z "$NEW_REPO" ]]; then
+                NEW_REPO=$1
+            else
+                echo "错误：未知参数 $1"
+                show_help
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
 
 # 检查必要参数
 if [[ -z "$FULL_IMAGE" || -z "$NEW_REPO" ]]; then
@@ -74,3 +103,15 @@ echo "docker tag ${ORIGINAL_REPO}${IMAGE_NAME}:${TAG} ${NEW_REPO}${IMAGE_NAME}:$
 echo "docker push ${NEW_REPO}${IMAGE_NAME}:${TAG}"
 echo "docker rmi ${NEW_REPO}${IMAGE_NAME}:${TAG}"
 echo "docker rmi ${ORIGINAL_REPO}${IMAGE_NAME}:${TAG}"
+if [[ "$IMPORT_DOCKER_FLAG" == "--import-docker" ]]; then
+    echo "# 请确保镜像已配置为公开或正确配置了拉取密钥"
+    echo "docker pull ${NEW_REPO}${IMAGE_NAME}:${TAG}"
+    echo "docker tag ${NEW_REPO}${IMAGE_NAME}:${TAG} ${ORIGINAL_REPO}${IMAGE_NAME}:${TAG}"
+    echo "docker rmi ${NEW_REPO}${IMAGE_NAME}:${TAG}"
+fi
+if [[ "$IMPORT_CONTAINERD_FLAG" == "--import-containerd" ]]; then
+    echo "# 请确保镜像已配置为公开或正确配置了拉取密钥"
+    echo "ctr i pull ${NEW_REPO}${IMAGE_NAME}:${TAG}"
+    echo "ctr i tag ${NEW_REPO}${IMAGE_NAME}:${TAG} ${ORIGINAL_REPO}${IMAGE_NAME}:${TAG}"
+    echo "ctr i del ${NEW_REPO}${IMAGE_NAME}:${TAG}"
+fi
